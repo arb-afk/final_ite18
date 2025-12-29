@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>3D Fireboy and Watergirl</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <!-- Game UI Overlay -->
+    <div id="ui-layer">
+      <!-- Main Menu -->
+      <div id="main-menu">
+        <h1>3D Fireboy and Watergirl</h1>
+        <button id="btn-start">Start Game</button>
+        <div id="level-select"></div>
+        <div class="menu-instructions">
+          <h3>How to Play</h3>
+          <p><span class="fire-text">Fireboy</span>: Move with <strong>WASD</strong>. Safe in <span style="color: #ff4444; font-weight: bold;">Lava</span>. Dies in <span style="color: #4488ff; font-weight: bold;">Water</span>.</p>
+          <p><span class="water-text">Watergirl</span>: Move with <strong>Arrows</strong>. Safe in <span style="color: #4488ff; font-weight: bold;">Water</span>. Dies in <span style="color: #ff4444; font-weight: bold;">Lava</span>.</p>
+          <p><strong>Both</strong> die in <span style="color: #00ff00; font-weight: bold;">Green Acid</span>.</p>
+          <p><strong>Co-op</strong>: Stand on buttons to open doors or move platforms for each other.</p>
+          <p><strong>Goal</strong>: Both characters must reach their matching doors simultaneously.</p>
+        </div>
+      </div>
+
+      <!-- HUD (Hidden on Menu) -->
+      <div id="hud" class="hidden">
+        <div id="level-info">Level 1</div>
+        
+        <div id="timer-display"><span id="timer">0:00</span></div>
+        
+        <div id="gem-counts">
+          <div class="gem-counter fire">
+            <div class="gem-display" id="fire-gems"></div>
+          </div>
+          <div class="gem-counter water">
+            <div class="gem-display" id="water-gems"></div>
+          </div>
+        </div>
+        
+        <button id="btn-restart">↺ Restart</button>
+        
+        <div id="controls-hint">
+          <div class="control-group fire">
+            <strong>Fire</strong><br>WASD<br><small>E: Lift Box</small>
+          </div>
+          <div class="control-group water">
+            <strong>Water</strong><br>Arrows<br><small>Space: Lift Box</small>
+          </div>
+        </div>
+      </div>
+
+      <div id="game-message" class="hidden">
+        <h1 id="msg-title">Level Complete!</h1>
+        <div id="stars-display"></div>
+        <p id="msg-sub">Press R to Restart or N for Next Level</p>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

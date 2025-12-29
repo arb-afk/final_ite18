@@ -1,0 +1,308 @@
+import * as THREE from 'three';
+import { PhysicsWorld } from './Physics.js';
+import { LevelManager } from './LevelManager.js';
+
+// --- State ---
+const state = {
+  currentLevel: 0,
+  isPlaying: false,
+  isGameOver: false,
+  fireOnGoal: false,
+  waterOnGoal: false,
+  inMenu: true,
+  maxLevel: 0
+};
+
+// --- Setup ---
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x202025);
+scene.fog = new THREE.Fog(0x202025, 30, 60);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+
+const clock = new THREE.Clock();
+let accumulator = 0;
+const TIMESTEP = 1 / 60; // Fixed 60 FPS physics step
+
+// --- Camera ---
+const camera = new THREE.PerspectiveCamera(35, window.innerWidth / window.innerHeight, 1, 1000);
+camera.position.set(0, 8, 45);
+camera.lookAt(0, 2, 0);
+
+// --- Lights ---
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+scene.add(ambientLight);
+
+const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+dirLight.position.set(5, 20, 10);
+dirLight.castShadow = true;
+dirLight.shadow.mapSize.width = 2048;
+dirLight.shadow.mapSize.height = 2048;
+scene.add(dirLight);
+
+// --- Modules ---
+const physics = new PhysicsWorld(scene);
+const levelMgr = new LevelManager(scene, physics);
+
+// --- Progress System ---
+function loadProgress() {
+  const saved = localStorage.getItem('elemental_level');
+  state.maxLevel = saved ? parseInt(saved) : 0;
+  updateMenu();
+}
+
+function saveProgress(levelIndex) {
+  if (levelIndex > state.maxLevel) {
+    state.maxLevel = levelIndex;
+    localStorage.setItem('elemental_level', state.maxLevel);
+  }
+}
+
+// --- Characters ---
+function createCharacter(colorHex) {
+  const group = new THREE.Group();
+  const material = new THREE.MeshStandardMaterial({ color: colorHex, roughness: 0.2 });
+
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.8, 0.6), material);
+  body.position.y = 0.4;
+  body.castShadow = true;
+  group.add(body);
+
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.4), material);
+  head.position.y = 1.0;
+  head.castShadow = true;
+  group.add(head);
+
+  const eyeGeo = new THREE.BoxGeometry(0.1, 0.1, 0.05);
+  const eyeMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  const eyeL = new THREE.Mesh(eyeGeo, eyeMat); eyeL.position.set(-0.1, 1.0, 0.2);
+  const eyeR = new THREE.Mesh(eyeGeo, eyeMat); eyeR.position.set(0.1, 1.0, 0.2);
+  group.add(eyeL, eyeR);
+
+  scene.add(group);
+
+  return {
+    mesh: group,
+    velocity: new THREE.Vector3(),
+    isGrounded: false,
+    width: 0.6,
+    height: 1.2
+  };
+}
+
+const playerFire = createCharacter(0xff4444);
+const playerWater = createCharacter(0x4488ff);
+
+// --- UI & Controls ---
+const ui = {
+  menu: document.getElementById('main-menu'),
+  hud: document.getElementById('hud'),
+  msg: document.getElementById('game-message'),
+  btnStart: document.getElementById('btn-start'),
+  btnRestart: document.getElementById('btn-restart'),
+  levelSelect: document.getElementById('level-select')
+};
+
+// Helper to rebuild menu
+function updateMenu() {
+  if (!ui.levelSelect) return; // Guard
+  ui.levelSelect.innerHTML = '';
+  const totalLevels = levelMgr.getLevels().length;
+  
+  for (let i = 0; i < totalLevels; i++) {
+    const btn = document.createElement('button');
+    btn.innerText = `Level ${i + 1}`;
+    btn.className = 'level-btn';
+    
+    if (i > state.maxLevel) {
+      btn.disabled = true;
+      btn.style.opacity = 0.5;
+      btn.innerText += " (Locked)";
+    } else {
+      btn.onclick = () => {
+        ui.menu.classList.add('hidden');
+        ui.hud.classList.remove('hidden');
+        state.inMenu = false;
+        startGame(i);
+      };
+    }
+    ui.levelSelect.appendChild(btn);
+  }
+}
+
+ui.btnStart.onclick = () => {
+  ui.menu.classList.add('hidden');
+  ui.hud.classList.remove('hidden');
+  state.inMenu = false;
+  // Start highest available level
+  startGame(state.maxLevel >= levelMgr.getLevels().length ? 0 : state.maxLevel);
+};
+
+ui.btnRestart.addEventListener('click', () => {
+  if (!state.inMenu) restartLevel();
+});
+
+const keys = {};
+window.addEventListener('keydown', (e) => {
+  keys[e.code] = true;
+  if (!state.inMenu) {
+    if (state.isGameOver || (!state.isPlaying && state.fireOnGoal && state.waterOnGoal)) {
+      if (e.code === 'KeyR') restartLevel();
+      if (e.code === 'KeyN') nextLevel();
+    }
+    if (e.code === 'Escape') {
+      state.inMenu = true;
+      state.isPlaying = false;
+      ui.menu.classList.remove('hidden');
+      ui.hud.classList.add('hidden');
+      hideMsg();
+      updateMenu();
+    }
+  }
+});
+window.addEventListener('keyup', (e) => keys[e.code] = false);
+
+// --- Game Logic ---
+function startGame(levelIndex) {
+  state.currentLevel = levelIndex;
+  const startPos = levelMgr.loadLevel(levelIndex);
+  
+  if (!startPos) {
+    state.currentLevel = 0;
+    startGame(0);
+    return;
+  }
+
+  resetPlayer(playerFire, startPos.fire);
+  resetPlayer(playerWater, startPos.water);
+
+  state.isPlaying = true;
+  state.isGameOver = false;
+  state.fireOnGoal = false;
+  state.waterOnGoal = false;
+  hideMsg();
+  
+  // Reset accumulator to prevent catch-up jumps on start
+  accumulator = 0;
+  clock.getDelta(); // clear clock
+}
+
+function resetPlayer(p, pos) {
+  p.mesh.position.set(pos[0], pos[1], 0); 
+  p.velocity.set(0, 0, 0);
+  p.ridingPlatform = null;
+}
+
+function restartLevel() {
+  startGame(state.currentLevel);
+}
+
+function nextLevel() {
+  const nextIdx = state.currentLevel + 1;
+  saveProgress(nextIdx); 
+  startGame(nextIdx);
+}
+
+function showMsg(title, sub) {
+  document.getElementById('msg-title').innerText = title;
+  document.getElementById('msg-sub').innerText = sub;
+  ui.msg.classList.remove('hidden');
+}
+
+function hideMsg() {
+  ui.msg.classList.add('hidden');
+}
+
+function checkGoals() {
+  if (state.fireOnGoal && state.waterOnGoal) {
+    state.isPlaying = false;
+    showMsg("LEVEL COMPLETE", "Press N for Next Level");
+    saveProgress(state.currentLevel + 1); 
+  }
+}
+
+function update() {
+  requestAnimationFrame(update);
+  
+  const delta = Math.min(clock.getDelta(), 0.1); // Cap to 100ms
+  
+  if (state.inMenu) {
+    const t = Date.now() * 0.0005;
+    camera.position.x = Math.sin(t) * 20;
+    camera.position.z = Math.cos(t) * 20 + 20;
+    camera.lookAt(0, 5, 0);
+    renderer.render(scene, camera);
+    return;
+  }
+
+  if (!state.isPlaying && !state.isGameOver && !(state.fireOnGoal && state.waterOnGoal)) {
+     renderer.render(scene, camera);
+     return;
+  }
+
+  if (state.isPlaying) {
+    // Fixed Timestep Loop
+    accumulator += delta;
+    
+    while (accumulator >= TIMESTEP) {
+      stepPhysics();
+      accumulator -= TIMESTEP;
+    }
+  }
+
+  // Camera Follow (Interpolate visual position?) 
+  // For simplicity, just follow exact position. 
+  // For ultra-smoothness, we could lerp between physics states, but for now this is fine.
+  
+  const midX = (playerFire.mesh.position.x + playerWater.mesh.position.x) / 2;
+  const midY = (playerFire.mesh.position.y + playerWater.mesh.position.y) / 2;
+  
+  const targetX = midX;
+  const targetY = Math.max(0, midY + 4);
+
+  camera.position.x += (targetX - camera.position.x) * 0.1;
+  camera.position.y += (targetY - camera.position.y) * 0.1;
+  camera.position.z = 45; 
+  camera.lookAt(camera.position.x, camera.position.y - 2, 0);
+
+  renderer.render(scene, camera);
+}
+
+function stepPhysics() {
+    const resFire = physics.update(playerFire, {
+      left: keys['KeyA'], right: keys['KeyD'], up: keys['KeyW']
+    });
+
+    const resWater = physics.update(playerWater, {
+      left: keys['ArrowLeft'], right: keys['ArrowRight'], up: keys['ArrowUp']
+    });
+
+    physics.updatePlatforms();
+
+    // Hazard Check
+    if (resFire === 'dead' || resWater === 'dead' || 
+        (resFire === 'water' && !state.isGameOver) || 
+        (resWater === 'lava' && !state.isGameOver) || 
+        resFire === 'acid' || resWater === 'acid') {
+      state.isPlaying = false;
+      state.isGameOver = true;
+      showMsg("GAME OVER", "Press R to Restart");
+    }
+
+    state.fireOnGoal = (resFire === 'goal_fire');
+    state.waterOnGoal = (resWater === 'goal_water');
+
+    checkGoals();
+}
+
+// Init
+loadProgress();
+levelMgr.loadLevel(0); 
+update();
+/ /   r e l o a d 
+ 
+ 
