@@ -257,6 +257,8 @@ async function startGame(levelIndex) {
   initializeGemDisplay();
   updateHUD();
   hideMsg();
+  // Clear stars display when starting a new level
+  document.getElementById('stars-display').innerHTML = '';
   
   ui.menu.classList.add('hidden');
   ui.hud.classList.remove('hidden');
@@ -520,6 +522,8 @@ function stepPhysics() {
       if (!state.isGameOver) audio.playDeath();
       state.isPlaying = false;
       state.isGameOver = true;
+      // Clear stars display on game over
+      document.getElementById('stars-display').innerHTML = '';
       showMsg("GAME OVER", "Press R to Restart");
     }
 
