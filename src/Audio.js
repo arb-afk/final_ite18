@@ -122,20 +122,16 @@ export class AudioManager {
       return;
     }
     
+    // Don't block if music isn't loaded yet - start it when it becomes available
     if (!this.bgmBuffer) {
-      console.log('Music buffer not loaded yet, waiting...');
-      // Wait for buffer to load
-      for (let i = 0; i < 50; i++) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-        if (this.bgmBuffer) {
-          console.log('Music buffer loaded after waiting');
-          break;
+      console.log('Music buffer not loaded yet, will start when available');
+      // Check again after a short delay (non-blocking)
+      setTimeout(() => {
+        if (this.bgmBuffer && !this.isPlaying) {
+          this.startMusic();
         }
-      }
-      if (!this.bgmBuffer) {
-        console.warn('Music buffer still not available after waiting');
-        return;
-      }
+      }, 500);
+      return;
     }
     
     this.isPlaying = true;
